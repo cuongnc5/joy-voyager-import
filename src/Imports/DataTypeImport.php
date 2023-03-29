@@ -4,8 +4,10 @@ namespace Joy\VoyagerImport\Imports;
 
 // use App\Models\User;
 
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Joy\VoyagerImport\Events\BreadDataImported;
 use Maatwebsite\Excel\Concerns\Importable;
@@ -153,7 +155,6 @@ class DataTypeImport implements
                 }
             }
         }
-
         return $rules;
     }
 
@@ -254,7 +255,9 @@ class DataTypeImport implements
      */
     public function model(array $item)
     {
+        
         $item = array_filter($item);
+        
         if (!$item || empty($item)) {
             return null;
         }
@@ -271,22 +274,26 @@ class DataTypeImport implements
         }
 
         foreach ($this->dataType->rows as $row) {
+            
             if ($data->hasSetMutator($row->field . '_import')) {
-                $data->{$row->field . '_import'} = ($item[$row->field] ?? null);
+                $data->{$row->field . '_import'} = ($item[$this->convert_vi_to_en($row->display_name)] ?? null);
             }
 
             if (isset($row->details->view)) {
                 $data->{$row->field} = null;
             } elseif ($row->type == 'image') {
                 if (!filter_var(($item[$row->field] ?? null), FILTER_VALIDATE_URL)) {
-                    $data->{$row->field} = ($item[$row->field] ?? null);
+                    $data->{$row->field} = ($item[$this->convert_vi_to_en($row->display_name)] ?? null);
                 } else {
                     // @TODO remove starting string added by Voyager::image(
-                    $data->{$row->field} = ($item[$row->field] ?? null);
+                    $data->{$row->field} = ($item[$this->convert_vi_to_en($row->display_name)] ?? null);
                 }
             } elseif ($row->type == 'relationship') {
                 // @TODO handle each type of relationship
                 // $data->{$row->field} = null; // ;
+                if($row->display_name == "Người tạo"){                    
+                    $data->created_by = Auth::user()->id;
+                }
             } elseif ($row->type == 'select_multiple') {
                 // $value = [];
                 // if (property_exists($row->details, 'relationship')) {
@@ -323,24 +330,42 @@ class DataTypeImport implements
                 // @TODO filter with existing options
                 $data->{$row->field} = null; // $row->details->options->{($item[$row->field] ?? null)} ?? '';
             } elseif ($row->type == 'date' || $row->type == 'timestamp') {
-                if (property_exists($row->details, 'format') && !is_null(($item[$row->field] ?? null))) {
-                    $data->{$row->field} = \Carbon\Carbon::parse(($item[$row->field] ?? null))->format('YYYY-MM-DD HH:MM:SS');
-                } else {
-                    $data->{$row->field} = ($item[$row->field] ?? null);
-                }
+                if($row->field == "created_at"){
+                    $data->{$row->field} = Carbon::now();
+                }else{
+                    if (property_exists($row->details, 'format') && !is_null(($item[$row->field] ?? null))) {
+                        $data->{$row->field} = \Carbon\Carbon::parse(($item[$this->convert_vi_to_en($row->display_name)] ?? null))->format('YYYY-MM-DD HH:MM:SS');
+                    } else {
+                        $data->{$row->field} =($item[$this->convert_vi_to_en($row->display_name)] ?? null);
+                    }
+                }                
             } elseif ($row->type == 'checkbox') {
                 if (property_exists($row->details, 'on') && property_exists($row->details, 'off')) {
-                    $data->{$row->field} = ($item[$row->field] ?? null) === $row->details->on;
+                    $data->{$row->field} = ($item[$this->convert_vi_to_en($row->display_name)] ?? null) === $row->details->on;
                 } else {
-                    $data->{$row->field} = (bool) (int) ($item[$row->field] ?? null);
+                    $data->{$row->field} = (bool) (int) ($item[$this->convert_vi_to_en($row->display_name)] ?? null);
                 }
             } elseif ($row->type == 'color') {
-                $data->{$row->field} = ($item[$row->field] ?? null);
+                $data->{$row->field} = ($item[$this->convert_vi_to_en($row->display_name)] ?? null);
             } elseif ($row->type == 'text') {
                 // view('voyager::multilingual.input-hidden-bread-browse');
                 // $data->{$row->field} = mb_strlen( ($item[$row->field] ?? null) ) > 200 ? mb_substr(($item[$row->field] ?? null), 0, 200) . ' ...' : ($item[$row->field] ?? null);
-                $data->{$row->field} = ($item[$row->field] ?? null);
-            } elseif ($row->type == 'password') {
+                if($row->field == "created_by"){                    
+                    $data->{$row->field} = Auth::user()->id;
+                }else{
+                    $data->{$row->field} = ($item[$this->convert_vi_to_en($row->display_name)] ?? null);
+                }
+                
+            }elseif ($row->type == 'number') {
+                // view('voyager::multilingual.input-hidden-bread-browse');
+                // $data->{$row->field} = mb_strlen( ($item[$row->field] ?? null) ) > 200 ? mb_substr(($item[$row->field] ?? null), 0, 200) . ' ...' : ($item[$row->field] ?? null);
+                if($row->field == "created_by"){
+                    $data->{$row->field} = Auth::user()->id;
+                }else{
+                    $data->{$row->field} = ($item[$this->convert_vi_to_en($row->display_name)] ?? null);
+                }
+                
+            }elseif ($row->type == 'password') {
                 // view('voyager::multilingual.input-hidden-bread-browse');
                 // $data->{$row->field} = mb_strlen( ($item[$row->field] ?? null) ) > 200 ? mb_substr(($item[$row->field] ?? null), 0, 200) . ' ...' : ($item[$row->field] ?? null);
                 // @TODO check if not hash then use bcrypt
@@ -357,7 +382,7 @@ class DataTypeImport implements
             } elseif ($row->type == 'text_area') {
                 // view('voyager::multilingual.input-hidden-bread-browse');
                 // $data->{$row->field} = mb_strlen( ($item[$row->field] ?? null) ) > 200 ? mb_substr(($item[$row->field] ?? null), 0, 200) . ' ...' : ($item[$row->field] ?? null);
-                $data->{$row->field} = ($item[$row->field] ?? null);
+                $data->{$row->field} = ($item[$this->convert_vi_to_en($row->display_name)] ?? null);
             } elseif ($row->type == 'file' && !empty(($item[$row->field] ?? null))) {
                 // $value = [];
                 // // view('voyager::multilingual.input-hidden-bread-browse');
@@ -374,7 +399,7 @@ class DataTypeImport implements
                 // view('voyager::multilingual.input-hidden-bread-browse');
                 // $data->{$row->field} = mb_strlen( strip_tags(($item[$row->field] ?? null), '<b><i><u>') ) > 200 ? mb_substr(strip_tags(($item[$row->field] ?? null), '<b><i><u>'), 0, 200) . ' ...' : strip_tags(($item[$row->field] ?? null), '<b><i><u>');
                 // @TODO newlines may needed to be converted into html
-                $data->{$row->field} = ($item[$row->field] ?? null);
+                $data->{$row->field} = ($item[$this->convert_vi_to_en($row->display_name)] ?? null);
             } elseif ($row->type == 'coordinates') {
                 // $url = 'https://maps.googleapis.com/maps/api/staticmap?zoom=' . config('voyager.googlemaps.zoom') . '&size=400x100&maptype=roadmap&';
                 // foreach ($row['getCoordinates']() as $point) {
@@ -447,7 +472,25 @@ class DataTypeImport implements
                 // $data->{$row->field} = ($item[$row->field] ?? null);
             }
         }
-
         return $data;
+    }
+
+    
+    function convert_vi_to_en($str) {
+         // Convert to lowercase
+        $str = mb_strtolower($str);
+        $str = preg_replace("/(à|á|ạ|ả|ã|â|ầ|ấ|ậ|ẩ|ẫ|ă|ằ|ắ|ặ|ẳ|ẵ)/", "a", $str);
+        $str = preg_replace("/(è|é|ẹ|ẻ|ẽ|ê|ề|ế|ệ|ể|ễ)/", "e", $str);
+        $str = preg_replace("/(ì|í|ị|ỉ|ĩ)/", "i", $str);
+        $str = preg_replace("/(ò|ó|ọ|ỏ|õ|ô|ồ|ố|ộ|ổ|ỗ|ơ|ờ|ớ|ợ|ở|ỡ)/", "o", $str);
+        $str = preg_replace("/(ù|ú|ụ|ủ|ũ|ư|ừ|ứ|ự|ử|ữ)/", "u", $str);
+        $str = preg_replace("/(ỳ|ý|ỵ|ỷ|ỹ)/", "y", $str);
+        $str = preg_replace("/(đ)/", "d", $str);      
+        // Replace spaces with underscores
+        $str = str_replace(' ', '_', $str);
+        $str = str_replace('(', '', $str);
+        $str = str_replace(')', '', $str);
+        $str = str_replace('/', '', $str);
+        return $str;
     }
 }

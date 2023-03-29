@@ -165,13 +165,16 @@ class DataTypeTemplateExport implements
     public function headings(): array
     {
         // If a column has a relationship associated with it, we do not want to show that field
-        // $this->removeRelationshipField($this->dataType, 'browse');
-
+        $this->removeRelationshipField($this->dataType, 'browse');
         $headings = [];
+        $timestamFields = ["created_at", "updated_at", "deleted_at"];
         // $headings[] = 'id'; // index column
-        foreach ($this->dataType->rows as $row) {
-            $headings[$row->field] = $row->field;
+        foreach ($this->dataType->browseRows as $row) {
+            if (!in_array($row->field, $timestamFields)) {
+                $headings[$row->field] = $row->display_name;
+            }
         }
+       
         return $headings;
     }
 
@@ -181,56 +184,71 @@ class DataTypeTemplateExport implements
     public function map($data): array
     {
         // If a column has a relationship associated with it, we do not want to show that field
-        // $this->removeRelationshipField($this->dataType, 'browse');
+        $this->removeRelationshipField($this->dataType, 'browse');
 
         $columns = [];
         // $columns[] = $data->id;
 
-        foreach ($this->dataType->rows as $row) {
+        $timestamFields = ["created_at", "updated_at", "deleted_at"];
+        foreach ($this->dataType->browseRows as $row) {
             $column = null;
-            if ($data->{$row->field . '_export'}) {
-                $data->{$row->field} = $data->{$row->field . '_export'};
-            } elseif ($data->{$row->field . '_browse'}) {
-                $data->{$row->field} = $data->{$row->field . '_browse'};
-            }
-
-            if (isset($row->details->view)) {
-                $column = trim(strip_tags((string) view($row->details->view, [
-                    'row'             => $row,
-                    'dataType'        => $this->dataType,
-                    'data'            => $data,
-                    'dataTypeContent' => $this->dataTypeContent,
-                    'content'         => $data->{$row->field},
-                    'action'          => 'browse',
-                    'view'            => 'browse',
-                    'options'         => $row->details
-                ])));
-            } elseif ($row->type == 'image') {
-                // if (!filter_var($data->{$row->field}, FILTER_VALIDATE_URL)) {
-                //     $column = Voyager::image($data->{$row->field});
-                // } else {
-                $column = $data->{$row->field};
-            // }
-            } elseif ($row->type == 'relationship') {
-                $column = trim(strip_tags((string) view('voyager::formfields.relationship', [
-                    'view'            => 'browse',
-                    'row'             => $row,
-                    'dataType'        => $this->dataType,
-                    'data'            => $data,
-                    'dataTypeContent' => $this->dataTypeContent,
-                    'content'         => $data->{$row->field},
-                    'action'          => 'browse',
-                    'view'            => 'browse',
-                    'options'         => $row->details
-                ])));
-            } elseif ($row->type == 'select_multiple') {
-                $values = [];
-                if (property_exists($row->details, 'relationship')) {
-                    foreach ($data->{$row->field} as $item) {
-                        $values[] = $item->{$row->field};
+            if (!in_array($row->field, $timestamFields)) {
+                if ($data->{$row->field . '_export'}) {
+                    $data->{$row->field} = $data->{$row->field . '_export'};
+                } elseif ($data->{$row->field . '_browse'}) {
+                    $data->{$row->field} = $data->{$row->field . '_browse'};
+                }
+    
+                if (isset($row->details->view)) {
+                    $column = trim(strip_tags((string) view($row->details->view, [
+                        'row'             => $row,
+                        'dataType'        => $this->dataType,
+                        'data'            => $data,
+                        'dataTypeContent' => $this->dataTypeContent,
+                        'content'         => $data->{$row->field},
+                        'action'          => 'browse',
+                        'view'            => 'browse',
+                        'options'         => $row->details
+                    ])));
+                } elseif ($row->type == 'image') {
+                    // if (!filter_var($data->{$row->field}, FILTER_VALIDATE_URL)) {
+                    //     $column = Voyager::image($data->{$row->field});
+                    // } else {
+                    $column = $data->{$row->field};
+                // }
+                } elseif ($row->type == 'relationship') {
+                    $column = trim(strip_tags((string) view('voyager::formfields.relationship', [
+                        'view'            => 'browse',
+                        'row'             => $row,
+                        'dataType'        => $this->dataType,
+                        'data'            => $data,
+                        'dataTypeContent' => $this->dataTypeContent,
+                        'content'         => $data->{$row->field},
+                        'action'          => 'browse',
+                        'view'            => 'browse',
+                        'options'         => $row->details
+                    ])));
+                } elseif ($row->type == 'select_multiple') {
+                    $values = [];
+                    if (property_exists($row->details, 'relationship')) {
+                        foreach ($data->{$row->field} as $item) {
+                            $values[] = $item->{$row->field};
+                        }
+                    } elseif (property_exists($row->details, 'options')) {
+                        if (!empty(json_decode($data->{$row->field}))) {
+                            foreach (json_decode($data->{$row->field}) as $item) {
+                                if (@$row->details->options->{$item}) {
+                                    $values[] = $row->details->options->{$item};
+                                }
+                            }
+                        } else {
+                            $values[] = __('voyager::generic.none');
+                        }
                     }
-                } elseif (property_exists($row->details, 'options')) {
-                    if (!empty(json_decode($data->{$row->field}))) {
+                    $column = implode(', ', $values);
+                } elseif ($row->type == 'multiple_checkbox' && property_exists($row->details, 'options')) {
+                    $values = [];
+                    if (@count(json_decode($data->{$row->field})) > 0) {
                         foreach (json_decode($data->{$row->field}) as $item) {
                             if (@$row->details->options->{$item}) {
                                 $values[] = $row->details->options->{$item};
@@ -239,134 +257,128 @@ class DataTypeTemplateExport implements
                     } else {
                         $values[] = __('voyager::generic.none');
                     }
-                }
-                $column = implode(', ', $values);
-            } elseif ($row->type == 'multiple_checkbox' && property_exists($row->details, 'options')) {
-                $values = [];
-                if (@count(json_decode($data->{$row->field})) > 0) {
-                    foreach (json_decode($data->{$row->field}) as $item) {
-                        if (@$row->details->options->{$item}) {
-                            $values[] = $row->details->options->{$item};
-                        }
-                    }
-                } else {
-                    $values[] = __('voyager::generic.none');
-                }
-                $column = implode(', ', $values);
-            } elseif (($row->type == 'select_dropdown' || $row->type == 'radio_btn') && property_exists($row->details, 'options')) {
-                $column = $row->details->options->{$data->{$row->field}} ?? '';
-            } elseif ($row->type == 'date' || $row->type == 'timestamp') {
-                if (property_exists($row->details, 'format') && !is_null($data->{$row->field})) {
-                    $column = \Carbon\Carbon::parse($data->{$row->field})->isoFormat($row->details->format);
-                } else {
-                    $column = $data->{$row->field};
-                }
-            } elseif ($row->type == 'checkbox') {
-                if (property_exists($row->details, 'on') && property_exists($row->details, 'off')) {
-                    if ($data->{$row->field}) {
-                        $column = $row->details->on;
+                    $column = implode(', ', $values);
+                } elseif (($row->type == 'select_dropdown' || $row->type == 'radio_btn') && property_exists($row->details, 'options')) {
+                    $column = $row->details->options->{$data->{$row->field}} ?? '';
+                } elseif ($row->type == 'date' || $row->type == 'timestamp') {
+                    if (property_exists($row->details, 'format') && !is_null($data->{$row->field})) {
+                        $column = \Carbon\Carbon::parse($data->{$row->field})->isoFormat($row->details->format);
                     } else {
-                        $column = $row->details->off;
+                        $column = $data->{$row->field};
                     }
-                } else {
-                    $column = $data->{$row->field};
-                }
-            } elseif ($row->type == 'color') {
-                $column = $data->{$row->field};
-            } elseif ($row->type == 'text') {
-                // view('voyager::multilingual.input-hidden-bread-browse');
-                // $column = mb_strlen( $data->{$row->field} ) > 200 ? mb_substr($data->{$row->field}, 0, 200) . ' ...' : $data->{$row->field};
-                $column = $data->{$row->field};
-            } elseif ($row->type == 'text_area') {
-                // view('voyager::multilingual.input-hidden-bread-browse');
-                // $column = mb_strlen( $data->{$row->field} ) > 200 ? mb_substr($data->{$row->field}, 0, 200) . ' ...' : $data->{$row->field};
-                $column = $data->{$row->field};
-            } elseif ($row->type == 'file' && !empty($data->{$row->field})) {
-                $values = [];
-                // view('voyager::multilingual.input-hidden-bread-browse');
-                if (json_decode($data->{$row->field}) !== null) {
-                    foreach (json_decode($data->{$row->field}) as $file) {
-                        $values[] = Storage::disk(config('voyager.storage.disk'))->url($file->download_link) ?: '';
-                    }
-                } else {
-                    $values[] = Storage::disk(config('voyager.storage.disk'))->url($data->{$row->field});
-                }
-                $column = implode(', ', $values);
-            } elseif ($row->type == 'rich_text_box') {
-                // view('voyager::multilingual.input-hidden-bread-browse');
-                // $column = mb_strlen( strip_tags($data->{$row->field}, '<b><i><u>') ) > 200 ? mb_substr(strip_tags($data->{$row->field}, '<b><i><u>'), 0, 200) . ' ...' : strip_tags($data->{$row->field}, '<b><i><u>');
-                $column = strip_tags($data->{$row->field}, '<b><i><u>');
-            } elseif ($row->type == 'coordinates') {
-                $url = 'https://maps.googleapis.com/maps/api/staticmap?zoom=' . config('voyager.googlemaps.zoom') . '&size=400x100&maptype=roadmap&';
-                foreach ($data->getCoordinates() as $point) {
-                    $url .= 'markers=color:red%7C' . $point['lat'] . ',' . $point['lng'] . '&center=' . $point['lat'] . ',' . $point['lng'];
-                }
-                $url .= '&key=' . config('voyager.googlemaps.key');
-                // $column = view('voyager::partials.coordinates-static-image');
-                $column = $url;
-            } elseif ($row->type == 'multiple_images') {
-                $values = [];
-                $images = json_decode($data->{$row->field});
-                if ($images) {
-                    $images = array_slice($images, 0, 3);
-                    foreach ($images as $image) {
-                        if (!filter_var($image, FILTER_VALIDATE_URL)) {
-                            $values[] = Voyager::image($image);
+                } elseif ($row->type == 'checkbox') {
+                    if (property_exists($row->details, 'on') && property_exists($row->details, 'off')) {
+                        if ($data->{$row->field}) {
+                            $column = $row->details->on;
                         } else {
-                            $values[] = $image;
+                            $column = $row->details->off;
+                        }
+                    } else {
+                        $column = $data->{$row->field};
+                    }
+                } elseif ($row->type == 'color') {
+                    $column = $data->{$row->field};
+                } elseif ($row->type == 'text') {
+                    // view('voyager::multilingual.input-hidden-bread-browse');
+                    // $column = mb_strlen( $data->{$row->field} ) > 200 ? mb_substr($data->{$row->field}, 0, 200) . ' ...' : $data->{$row->field};
+                    $column = $data->{$row->field};
+                } elseif ($row->type == 'number') {
+                    // view('voyager::multilingual.input-hidden-bread-browse');
+                    // $column = mb_strlen( $data->{$row->field} ) > 200 ? mb_substr($data->{$row->field}, 0, 200) . ' ...' : $data->{$row->field};
+                    $column = $data->{$row->field};
+                } elseif ($row->type == 'text_area') {
+                    // view('voyager::multilingual.input-hidden-bread-browse');
+                    // $column = mb_strlen( $data->{$row->field} ) > 200 ? mb_substr($data->{$row->field}, 0, 200) . ' ...' : $data->{$row->field};
+                    $column = $data->{$row->field};
+                } elseif ($row->type == 'file' && !empty($data->{$row->field})) {
+                    $values = [];
+                    // view('voyager::multilingual.input-hidden-bread-browse');
+                    if (json_decode($data->{$row->field}) !== null) {
+                        foreach (json_decode($data->{$row->field}) as $file) {
+                            $values[] = Storage::disk(config('voyager.storage.disk'))->url($file->download_link) ?: '';
+                        }
+                    } else {
+                        $values[] = Storage::disk(config('voyager.storage.disk'))->url($data->{$row->field});
+                    }
+                    $column = implode(', ', $values);
+                } elseif ($row->type == 'rich_text_box') {
+                    // view('voyager::multilingual.input-hidden-bread-browse');
+                    // $column = mb_strlen( strip_tags($data->{$row->field}, '<b><i><u>') ) > 200 ? mb_substr(strip_tags($data->{$row->field}, '<b><i><u>'), 0, 200) . ' ...' : strip_tags($data->{$row->field}, '<b><i><u>');
+                    $column = strip_tags($data->{$row->field}, '<b><i><u>');
+                } elseif ($row->type == 'coordinates') {
+                    $url = 'https://maps.googleapis.com/maps/api/staticmap?zoom=' . config('voyager.googlemaps.zoom') . '&size=400x100&maptype=roadmap&';
+                    foreach ($data->getCoordinates() as $point) {
+                        $url .= 'markers=color:red%7C' . $point['lat'] . ',' . $point['lng'] . '&center=' . $point['lat'] . ',' . $point['lng'];
+                    }
+                    $url .= '&key=' . config('voyager.googlemaps.key');
+                    // $column = view('voyager::partials.coordinates-static-image');
+                    $column = $url;
+                } elseif ($row->type == 'multiple_images') {
+                    $values = [];
+                    $images = json_decode($data->{$row->field});
+                    if ($images) {
+                        $images = array_slice($images, 0, 3);
+                        foreach ($images as $image) {
+                            if (!filter_var($image, FILTER_VALIDATE_URL)) {
+                                $values[] = Voyager::image($image);
+                            } else {
+                                $values[] = $image;
+                            }
                         }
                     }
-                }
-                $column = implode(', ', $values);
-            } elseif ($row->type == 'media_picker') {
-                $values = [];
-
-                if (is_array($data->{$row->field})) {
-                    $files = $data->{$row->field};
-                } else {
-                    $files = json_decode($data->{$row->field});
-                }
-
-                if ($files) {
-                    if (property_exists($row->details, 'show_as_images') && $row->details->show_as_images) {
-                        foreach (array_slice($files, 0, 3) as $file) {
-                            if (!filter_var($file, FILTER_VALIDATE_URL)) {
-                                $values[] = Voyager::image($file);
-                            } else {
+                    $column = implode(', ', $values);
+                } elseif ($row->type == 'media_picker') {
+                    $values = [];
+    
+                    if (is_array($data->{$row->field})) {
+                        $files = $data->{$row->field};
+                    } else {
+                        $files = json_decode($data->{$row->field});
+                    }
+    
+                    if ($files) {
+                        if (property_exists($row->details, 'show_as_images') && $row->details->show_as_images) {
+                            foreach (array_slice($files, 0, 3) as $file) {
+                                if (!filter_var($file, FILTER_VALIDATE_URL)) {
+                                    $values[] = Voyager::image($file);
+                                } else {
+                                    $values[] = $file;
+                                }
+                            }
+                        } else {
+                            foreach (array_slice($files, 0, 3) as $file) {
                                 $values[] = $file;
                             }
                         }
-                    } else {
-                        foreach (array_slice($files, 0, 3) as $file) {
-                            $values[] = $file;
+                        if (count($files) > 3) {
+                            $values[] = __('voyager::media.files_more', ['count' => (count($files) - 3)]);
                         }
-                    }
-                    if (count($files) > 3) {
-                        $values[] = __('voyager::media.files_more', ['count' => (count($files) - 3)]);
-                    }
-                } elseif (is_array($files) && count($files) == 0) {
-                    $values[] = trans_choice('voyager::media.files', 0);
-                } elseif ($data->{$row->field} != '') {
-                    if (property_exists($row->details, 'show_as_images') && $row->details->show_as_images) {
-                        if (!filter_var($data->{$row->field}, FILTER_VALIDATE_URL)) {
-                            $values[] = Voyager::image($data->{$row->field});
+                    } elseif (is_array($files) && count($files) == 0) {
+                        $values[] = trans_choice('voyager::media.files', 0);
+                    } elseif ($data->{$row->field} != '') {
+                        if (property_exists($row->details, 'show_as_images') && $row->details->show_as_images) {
+                            if (!filter_var($data->{$row->field}, FILTER_VALIDATE_URL)) {
+                                $values[] = Voyager::image($data->{$row->field});
+                            } else {
+                                $values[] = $data->{$row->field};
+                            }
                         } else {
                             $values[] = $data->{$row->field};
                         }
                     } else {
-                        $values[] = $data->{$row->field};
+                        $values[] = trans_choice('voyager::media.files', 0);
                     }
+                    $column = implode(', ', $values);
                 } else {
-                    $values[] = trans_choice('voyager::media.files', 0);
+                    // view('voyager::multilingual.input-hidden-bread-browse');
+                    $column = $data->{$row->field};
                 }
-                $column = implode(', ', $values);
-            } else {
-                // view('voyager::multilingual.input-hidden-bread-browse');
-                $column = $data->{$row->field};
+                $columns[] = $column;
             }
-            $columns[] = $column;
+            
         }
         return $columns;
+    
     }
 
     /**
